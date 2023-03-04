@@ -13,7 +13,7 @@
 #define PIR_LED_PIN 13
 
 #define MOTION_REQUIRE_TIME_MILLIS 10000
-#define TIMER_INCREMENT 5000
+#define TIMER_INCREMENT 300000L
 
 LiquidCrystal lcd(RS_PIN, EN_PIN, D4_PIN, D5_PIN, D6_PIN, D7_PIN);
 
@@ -54,7 +54,7 @@ void setup() {
 
 char *getTimeDescription(bool timerRunning, long timerRemaining) {
   if (timerRunning && timerRemaining > 0)
-    return "remaining";
+    return "left";
   if (timerRemaining > 0)
     return "(paused)";
   return "ready";
@@ -66,11 +66,22 @@ void printRemainingTime(long remainingTime) {
   //  remainingTime;
   if (remainingTime < 0)
     remainingTime = 0;
-  int minutes = remainingTime / 60000 % 61;
+  else if (remainingTime % 1000 != 0)
+    remainingTime++;
+  int hours = remainingTime / 3600000L % 10;
+  int minutes = remainingTime / 60000 % 60;
   int seconds = remainingTime / 1000 % 60;
   lcd.setCursor(0, 0);  // column 0, row 0 (starting from 0)
   char buffer[20];
-  sprintf(buffer, "%2d:%02d %-9s", minutes, seconds, getTimeDescription(timerRunning, timerRemaining));
+  sprintf(buffer,
+          "%c%s%2d:%02d %-8s",
+          hours > 0 ? '0' + hours : ' ',
+          hours > 0 ? ":" : " ",
+          minutes,
+          seconds,
+          getTimeDescription(timerRunning, timerRemaining));
+  if (hours > 0 && minutes < 10)
+    buffer[2] = '0';
   lcd.print(buffer);
 
   Serial.print(buffer);
