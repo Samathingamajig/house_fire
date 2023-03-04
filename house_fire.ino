@@ -139,6 +139,7 @@ void loop() {
 
     motionDetectedTime = millis();
     digitalWrite(TIMER_LED_PIN, timerRunning);
+    printRemainingTime(timerRemaining);
     buttonState = false;
   }
 
