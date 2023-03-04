@@ -52,9 +52,11 @@ void setup() {
   printRemainingTime(timerRemaining);
 }
 
-char* getTimeDescription(bool timerRunning, long timerRemaining) {
-  if (timerRunning && timerRemaining > 0) return "remaining";
-  if (timerRemaining > 0) return "(paused)";
+char *getTimeDescription(bool timerRunning, long timerRemaining) {
+  if (timerRunning && timerRemaining > 0)
+    return "remaining";
+  if (timerRemaining > 0)
+    return "(paused)";
   return "ready";
 }
 
