@@ -25,7 +25,14 @@ int button2Raw = 0;
 bool buttonState = false;
 bool button2State = false;
 
-bool timerRunning = false;
+enum TimerState {
+  RUNNING,
+  ENDED,
+  PAUSED_MOTION,
+  PAUSED_MANUAL,
+};
+
+TimerState timerState = ENDED;
 long timerRemaining = 0;
 unsigned long motionDetectedTime = 0;
 
@@ -47,13 +54,13 @@ void setup() {
   Serial.begin(9600);
 
   timerRemaining = 5000;
-  timerRunning = true;
+  timerState = RUNNING;
   digitalWrite(TIMER_LED_PIN, HIGH);
   printRemainingTime(timerRemaining);
 }
 
-char *getTimeDescription(bool timerRunning, long timerRemaining) {
-  if (timerRunning && timerRemaining > 0)
+char *getTimeDescription(long timerRemaining) {
+  if (timerState == RUNNING && timerRemaining > 0)
     return "left";
   if (timerRemaining > 0)
     return "(paused)";
@@ -79,7 +86,7 @@ void printRemainingTime(long remainingTime) {
           hours > 0 ? ":" : " ",
           minutes,
           seconds,
-          getTimeDescription(timerRunning, timerRemaining));
+          getTimeDescription(timerRemaining));
   if (hours > 0 && minutes < 10)
     buffer[2] = '0';
   lcd.print(buffer);
@@ -97,23 +104,23 @@ void loop() {
   cmillis = millis();
   firstInSecond = (cmillis / 1000) != (pmillis / 1000);
 
-  if (timerRunning)
+  if (timerState == RUNNING)
     timerRemaining -= (long)(cmillis - pmillis);
 
-  if (firstInSecond && timerRunning) {
+  if (firstInSecond && timerState == RUNNING) {
     printRemainingTime(timerRemaining);
     if (timerRemaining < 0) {
-      timerRunning = false;
+      timerState = ENDED;
       digitalWrite(TIMER_LED_PIN, LOW);
     }
   }
 
   // Serial.println(millis() - motionDetectedTime);
 
-  if (timerRunning && millis() > motionDetectedTime + MOTION_REQUIRE_TIME_MILLIS) {
+  if (timerState == RUNNING && millis() > motionDetectedTime + MOTION_REQUIRE_TIME_MILLIS) {
     Serial.println("Oopsie poopsie you died");
     digitalWrite(TIMER_LED_PIN, LOW);
-    timerRunning = false;
+    timerState = PAUSED_MOTION;
     printRemainingTime(timerRemaining);
   }
 
@@ -127,6 +134,10 @@ void loop() {
     if (motionState == false) {
       Serial.println("Motion detected!");
       motionState = true;
+      if (timerState == PAUSED_MOTION)
+        digitalWrite(TIMER_LED_PIN, HIGH);
+        timerState = RUNNING;
+        printRemainingTime(timerRemaining);
     }
   }
 
@@ -146,10 +157,10 @@ void loop() {
     buttonState = true;
   } else if (buttonRaw == LOW && buttonState == true) {
     // Serial.println("Button released!");
-    timerRunning = !timerRunning;
+    timerState = timerState == RUNNING ? PAUSED_MANUAL : RUNNING;
 
     motionDetectedTime = millis();
-    digitalWrite(TIMER_LED_PIN, timerRunning);
+    digitalWrite(TIMER_LED_PIN, timerState == RUNNING);
     printRemainingTime(timerRemaining);
     buttonState = false;
   }
@@ -159,6 +170,8 @@ void loop() {
     button2State = true;
   } else if (button2Raw == LOW && button2State == true) {
     // Serial.println("Button2 released!");
+    if (timerRemaining < 0)
+      timerRemaining = 0;
     timerRemaining += TIMER_INCREMENT;
     printRemainingTime(timerRemaining);
     button2State = false;
