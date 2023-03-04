@@ -67,7 +67,7 @@ void printRemainingTime(long remainingTime) {
   if (remainingTime < 0)
     remainingTime = 0;
   else if (remainingTime % 1000 != 0)
-    remainingTime++;
+    remainingTime += 1000;
   int hours = remainingTime / 3600000L % 10;
   int minutes = remainingTime / 60000 % 60;
   int seconds = remainingTime / 1000 % 60;
