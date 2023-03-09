@@ -12,7 +12,6 @@
 #define RS_PIN 11
 #define PIR_LED_PIN 13
 
-#define MOTION_REQUIRE_TIME_MILLIS 10000
 #define TIMER_INCREMENT 300000L
 
 LiquidCrystal lcd(RS_PIN, EN_PIN, D4_PIN, D5_PIN, D6_PIN, D7_PIN);
@@ -60,6 +59,18 @@ unsigned long cmillis = 0;
 unsigned long pmillis = 0;
 bool firstInSecond = false;
 
+const long motionRequireTimesMinutes[]{ 0, 1, 2, 5, 10, 15, 20, 30, 60 };
+
+long motionRequireTimeMillis = motionRequireTimesMinutes[4] * 1000;  // FIXME: update to accurate time
+
+enum class Scene {
+  Main,
+  TimeChanging,
+  MotionTimeChanging,
+};
+
+Scene scene = Scene::Main;
+
 void setup() {
   pinMode(PIR_LED_PIN, OUTPUT);
   pinMode(PIR_PIN, INPUT);
@@ -72,94 +83,141 @@ void setup() {
   Serial.begin(9600);
 
   printRemainingTime(timerRemaining);
+
+  //motionRequireTimeMillis = 10 * 1000;
 }
 
 char *getTimeDescription(long timerRemaining) {
-  if (timerState == RUNNING && timerRemaining > 0)
-    return "left";
-  if (timerRemaining > 0)
+  if (timerState == RUNNING && timerRemaining > 0) {
+    return "left    ";
+  } else if (timerRemaining > 0) {
     return "(paused)";
-  return "ready";
+  } else {
+    return "ready   ";
+  }
 }
 
-void printRemainingTime(long remainingTime) {
-  if (remainingTime < 0)
+void printTimeString(long remainingTime) {
+  if (remainingTime < 0) {
     remainingTime = 0;
-  else if (remainingTime % 1000 != 0)
+  } else if (remainingTime % 1000 != 0) {
     remainingTime += 1000;
+  }
   int hours = remainingTime / 3600000L % 10;
   int minutes = remainingTime / 60000 % 60;
   int seconds = remainingTime / 1000 % 60;
-  lcd.setCursor(0, 0);
-  char buffer[20];
+  char buffer[8];
   sprintf(buffer,
-          "%c%s%2d:%02d %-8s",
+          "%c%s%2d:%02d",
           hours > 0 ? '0' + hours : ' ',
           hours > 0 ? ":" : " ",
           minutes,
-          seconds,
-          getTimeDescription(timerRemaining));
-  if (hours > 0 && minutes < 10)
+          seconds);
+  if (hours > 0 && minutes < 10) {
     buffer[2] = '0';
+  }
   lcd.print(buffer);
-
   Serial.println(buffer);
+}
+
+void printRemainingTime(long remainingTime) {
+  if (remainingTime < 0) {
+    remainingTime = 0;
+  } else if (remainingTime % 1000 != 0) {
+    remainingTime += 1000 - remainingTime % 1000;
+  }
+  lcd.setCursor(0, 0);
+  printTimeString(remainingTime);
+  lcd.setCursor(8, 0);
+  lcd.print(getTimeDescription(remainingTime));
+  Serial.println(getTimeDescription(remainingTime));
 }
 
 void loop() {
   motionLatch.setState(digitalRead(PIR_PIN) == HIGH);
-  menuButtonLatch.setState(digitalRead(MENU_BUTTON_PIN) == LOW); // Sam's buttons work backwards for some reason, on any good breadboard this should be `== HIGH`
-  actionButtonLatch.setState(digitalRead(ACTION_BUTTON_PIN) == LOW); // same here
+  menuButtonLatch.setState(digitalRead(MENU_BUTTON_PIN) == LOW);      // Sam's buttons work backwards for some reason, on any good breadboard this should be `== HIGH`
+  actionButtonLatch.setState(digitalRead(ACTION_BUTTON_PIN) == LOW);  // same here
 
   cmillis = millis();
   firstInSecond = (cmillis / 1000) != (pmillis / 1000);
 
-  if (timerState == RUNNING)
-    timerRemaining -= (long)(cmillis - pmillis);
-
-  if (firstInSecond && timerState == RUNNING) {
-    printRemainingTime(timerRemaining);
-    if (timerRemaining < 0) {
-      timerState = ENDED;
-      digitalWrite(TIMER_LED_PIN, LOW);
+  if (scene == Scene::Main) {
+    if (timerState == RUNNING) {
+      timerRemaining -= (long)(cmillis - pmillis);
     }
-  }
 
-  if (timerState == RUNNING && millis() > motionDetectedTime + MOTION_REQUIRE_TIME_MILLIS) {
-    Serial.println("Oopsie poopsie you died");
-    digitalWrite(TIMER_LED_PIN, LOW);
-    timerState = PAUSED_MOTION;
-    printRemainingTime(timerRemaining);
-  }
-
-
-  if (motionLatch.state) {
-    motionDetectedTime = cmillis;
-
-    if (motionLatch.stateChange == LOW_TO_HIGH) {
-      Serial.println("Motion detected");
-      if (timerState == PAUSED_MOTION) {
-        digitalWrite(TIMER_LED_PIN, HIGH);
-        timerState = RUNNING;
+    if (firstInSecond && timerState == RUNNING) {
+      printRemainingTime(timerRemaining);
+      if (timerRemaining < 0) {
+        timerState = ENDED;
+        digitalWrite(TIMER_LED_PIN, LOW);
       }
+    }
+
+    if (timerState == RUNNING && (unsigned long)(cmillis - motionDetectedTime) > motionRequireTimeMillis) {
+      Serial.println("Oopsie poopsie you died");
+      digitalWrite(TIMER_LED_PIN, LOW);
+      timerState = PAUSED_MOTION;
       printRemainingTime(timerRemaining);
     }
-  } else if (motionLatch.stateChange == HIGH_TO_LOW) {
-    Serial.println("Motion ended!");
-  }
 
-  if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
-    timerState = (timerState == RUNNING) ? PAUSED_MANUAL : RUNNING;
-    motionDetectedTime = cmillis;
-    digitalWrite(TIMER_LED_PIN, timerState == RUNNING);
-    printRemainingTime(timerRemaining);
-  }
 
-  if (actionButtonLatch.stateChange == HIGH_TO_LOW) {
-    if (timerRemaining < 0)
-      timerRemaining = 0;
-    timerRemaining += TIMER_INCREMENT;
-    printRemainingTime(timerRemaining);
+    if (motionLatch.state) {
+      motionDetectedTime = cmillis;
+
+      if (motionLatch.stateChange == LOW_TO_HIGH) {
+        Serial.println("Motion detected");
+        if (timerState == PAUSED_MOTION) {
+          digitalWrite(TIMER_LED_PIN, HIGH);
+          timerState = RUNNING;
+        }
+        printRemainingTime(timerRemaining);
+      }
+    } else if (motionLatch.stateChange == HIGH_TO_LOW) {
+      Serial.println("Motion ended!");
+    }
+
+    if (actionButtonLatch.stateChange == HIGH_TO_LOW) {
+      timerState = (timerState == RUNNING) ? PAUSED_MANUAL : RUNNING;
+      motionDetectedTime = cmillis;
+      digitalWrite(TIMER_LED_PIN, timerState == RUNNING);
+      printRemainingTime(timerRemaining);
+    }
+
+    bool transitionSafe = timerState == ENDED || timerState == PAUSED_MANUAL;
+    if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
+      if (transitionSafe) {
+        scene = Scene::TimeChanging;
+        lcd.clear();
+        lcd.setCursor(2, 1);
+        lcd.print("Modify Timer");
+        lcd.home();
+        printTimeString(timerRemaining);
+      } else {
+        lcd.setCursor(0, 1);
+        lcd.print("                ");
+      }
+    } else if (menuButtonLatch.stateChange == LOW_TO_HIGH && !transitionSafe) {
+      lcd.setCursor(2, 1);
+      lcd.print("(stop timer)");
+    }
+  } else if (scene == Scene::TimeChanging) {
+    if (actionButtonLatch.stateChange == HIGH_TO_LOW) {
+      if (timerRemaining < 0) {
+        timerRemaining = 0;
+      }
+      motionDetectedTime = cmillis;
+      timerRemaining += TIMER_INCREMENT;
+      lcd.home();
+      printTimeString(timerRemaining);
+    }
+
+    if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
+      scene = Scene::Main;
+      lcd.clear();
+      lcd.home();
+      printRemainingTime(timerRemaining);
+    }
   }
 
   pmillis = cmillis;
