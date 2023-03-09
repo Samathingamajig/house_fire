@@ -59,9 +59,20 @@ unsigned long cmillis = 0;
 unsigned long pmillis = 0;
 bool firstInSecond = false;
 
-const long motionRequireTimesMinutes[]{ 0, 1, 2, 5, 10, 15, 20, 30, 60 };
-
-long motionRequireTimeMillis = motionRequireTimesMinutes[4] * 1000;  // FIXME: update to accurate time
+const long motionRequireTimesMillis[]{
+  0,  // off
+  10L * 1000,
+  1L * 1000 * 60,
+  2L * 1000 * 60,
+  5L * 1000 * 60,
+  10L * 1000 * 60,
+  15L * 1000 * 60,
+  20L * 1000 * 60,
+  30L * 1000 * 60,
+  60L * 1000 * 60
+};
+const int motionRequireTimesLength = 10;
+int motionRequireTimeIndex = 0;
 
 enum class Scene {
   Main,
@@ -83,8 +94,6 @@ void setup() {
   Serial.begin(9600);
 
   printRemainingTime(timerRemaining);
-
-  //motionRequireTimeMillis = 10 * 1000;
 }
 
 char *getTimeDescription(long timerRemaining) {
@@ -97,6 +106,29 @@ char *getTimeDescription(long timerRemaining) {
   }
 }
 
+void printMotionRequireTime(long motionRequireTimeMillis) {
+  int minutes = motionRequireTimeMillis / 60000;
+  int seconds = motionRequireTimeMillis / 1000 % 60;
+
+  char buffer[20];
+
+  if (minutes > 0) {
+    sprintf(buffer, "%5d minute%s", minutes, minutes == 1 ? "" : "s");
+  } else if (seconds > 0) {
+    sprintf(buffer, "%5d second%s", seconds, seconds == 1 ? "" : "s");
+  } else {
+    strcpy(buffer, "   (disabled)");
+  }
+  // sprintf(buffer, "%16s", buffer);
+
+  lcd.home();
+  lcd.print("                ");
+  lcd.home();
+  lcd.print(buffer);
+
+  Serial.println(buffer);
+}
+
 void printTimeString(long remainingTime) {
   if (remainingTime < 0) {
     remainingTime = 0;
@@ -106,7 +138,7 @@ void printTimeString(long remainingTime) {
   int hours = remainingTime / 3600000L % 10;
   int minutes = remainingTime / 60000 % 60;
   int seconds = remainingTime / 1000 % 60;
-  char buffer[8];
+  char buffer[20];
   sprintf(buffer,
           "%c%s%2d:%02d",
           hours > 0 ? '0' + hours : ' ',
@@ -154,7 +186,9 @@ void loop() {
       }
     }
 
-    if (timerState == RUNNING && (unsigned long)(cmillis - motionDetectedTime) > motionRequireTimeMillis) {
+    if (timerState == RUNNING
+        && (unsigned long)(cmillis - motionDetectedTime) > motionRequireTimesMillis[motionRequireTimeIndex]
+        && motionRequireTimesMillis[motionRequireTimeIndex] != 0) {
       Serial.println("Oopsie poopsie you died");
       digitalWrite(TIMER_LED_PIN, LOW);
       timerState = PAUSED_MOTION;
@@ -208,8 +242,25 @@ void loop() {
       }
       motionDetectedTime = cmillis;
       timerRemaining += TIMER_INCREMENT;
+      if (timerRemaining > 35999000L) {
+        timerRemaining = 35999000L;
+      }
       lcd.home();
       printTimeString(timerRemaining);
+    }
+
+    if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
+      scene = Scene::MotionTimeChanging;
+      lcd.clear();
+      lcd.setCursor(2, 1);
+      lcd.print("Motion Timer");
+      printMotionRequireTime(motionRequireTimesMillis[motionRequireTimeIndex]);
+      lcd.home();
+    }
+  } else if (scene == Scene::MotionTimeChanging) {
+    if (actionButtonLatch.stateChange == HIGH_TO_LOW) {
+      motionRequireTimeIndex = (motionRequireTimeIndex + 1) % motionRequireTimesLength;
+      printMotionRequireTime(motionRequireTimesMillis[motionRequireTimeIndex]);
     }
 
     if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
