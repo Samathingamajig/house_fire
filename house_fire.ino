@@ -41,21 +41,16 @@ unsigned long pmillis = 0;
 bool firstInSecond = false;
 
 void setup() {
-  // Configure the pins as input or output:
   pinMode(PIR_LED_PIN, OUTPUT);
   pinMode(PIR_PIN, INPUT);
   pinMode(ADD_TIME_BUTTON_PIN, INPUT_PULLUP);
   pinMode(START_STOP_BUTTON_PIN, INPUT_PULLUP);
   pinMode(TIMER_LED_PIN, OUTPUT);
 
-  lcd.begin(16, 2);  // might need to change these numbers
+  lcd.begin(16, 2);
 
-  // Begin serial communication at a baud rate of 9600:
   Serial.begin(9600);
 
-  timerRemaining = 5000;
-  timerState = RUNNING;
-  digitalWrite(TIMER_LED_PIN, HIGH);
   printRemainingTime(timerRemaining);
 }
 
@@ -68,9 +63,6 @@ char *getTimeDescription(long timerRemaining) {
 }
 
 void printRemainingTime(long remainingTime) {
-  //  Serial.print(remaitningTime);
-  //  Serial.println();
-  //  remainingTime;
   if (remainingTime < 0)
     remainingTime = 0;
   else if (remainingTime % 1000 != 0)
@@ -78,7 +70,7 @@ void printRemainingTime(long remainingTime) {
   int hours = remainingTime / 3600000L % 10;
   int minutes = remainingTime / 60000 % 60;
   int seconds = remainingTime / 1000 % 60;
-  lcd.setCursor(0, 0);  // column 0, row 0 (starting from 0)
+  lcd.setCursor(0, 0);
   char buffer[20];
   sprintf(buffer,
           "%c%s%2d:%02d %-8s",
@@ -96,7 +88,6 @@ void printRemainingTime(long remainingTime) {
 }
 
 void loop() {
-  // Read out the PIR_PIN and store as val:
   motionRaw = digitalRead(PIR_PIN);
   buttonRaw = !digitalRead(START_STOP_BUTTON_PIN);
   button2Raw = !digitalRead(ADD_TIME_BUTTON_PIN);
@@ -114,8 +105,6 @@ void loop() {
       digitalWrite(TIMER_LED_PIN, LOW);
     }
   }
-
-  // Serial.println(millis() - motionDetectedTime);
 
   if (timerState == RUNNING && millis() > motionDetectedTime + MOTION_REQUIRE_TIME_MILLIS) {
     Serial.println("Oopsie poopsie you died");
@@ -153,10 +142,8 @@ void loop() {
   }
 
   if (buttonRaw == HIGH && buttonState == false) {
-    // Serial.println("Button pushed!");
     buttonState = true;
   } else if (buttonRaw == LOW && buttonState == true) {
-    // Serial.println("Button released!");
     timerState = timerState == RUNNING ? PAUSED_MANUAL : RUNNING;
 
     motionDetectedTime = millis();
@@ -166,10 +153,8 @@ void loop() {
   }
 
   if (button2Raw == HIGH && button2State == false) {
-    // Serial.println("Button2 pushed!");
     button2State = true;
   } else if (button2Raw == LOW && button2State == true) {
-    // Serial.println("Button2 released!");
     if (timerRemaining < 0)
       timerRemaining = 0;
     timerRemaining += TIMER_INCREMENT;
