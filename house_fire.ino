@@ -1,8 +1,8 @@
 #include <LiquidCrystal.h>
 
 #define PIR_PIN 2
-#define ADD_TIME_BUTTON_PIN 3
-#define START_STOP_BUTTON_PIN 4
+#define ACTION_BUTTON_PIN 3
+#define MENU_BUTTON_PIN 4
 #define TIMER_LED_PIN 5
 #define D7_PIN 6
 #define D6_PIN 7
@@ -17,17 +17,37 @@
 
 LiquidCrystal lcd(RS_PIN, EN_PIN, D4_PIN, D5_PIN, D6_PIN, D7_PIN);
 
-// Create variables:
-int motionRaw = 0;
-bool motionState = false;  // We start with no motion detected.
-int buttonRaw = 0;
-int button2Raw = 0;
-bool buttonState = false;
-bool button2State = false;
+enum StateChange {
+  NO_CHANGE,
+  LOW_TO_HIGH,
+  HIGH_TO_LOW,
+};
+
+class Latch {
+public:
+  bool state = 0;
+  StateChange stateChange = NO_CHANGE;
+
+  void setState(bool newState) {
+    if (!state && newState) {
+      stateChange = LOW_TO_HIGH;
+    } else if (state && !newState) {
+      stateChange = HIGH_TO_LOW;
+    } else {
+      stateChange = NO_CHANGE;
+    }
+
+    state = newState;
+  }
+};
+
+Latch motionLatch;
+Latch menuButtonLatch;
+Latch actionButtonLatch;
 
 enum TimerState {
-  RUNNING,
   ENDED,
+  RUNNING,
   PAUSED_MOTION,
   PAUSED_MANUAL,
 };
@@ -43,8 +63,8 @@ bool firstInSecond = false;
 void setup() {
   pinMode(PIR_LED_PIN, OUTPUT);
   pinMode(PIR_PIN, INPUT);
-  pinMode(ADD_TIME_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(START_STOP_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(ACTION_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(MENU_BUTTON_PIN, INPUT_PULLUP);
   pinMode(TIMER_LED_PIN, OUTPUT);
 
   lcd.begin(16, 2);
@@ -83,14 +103,13 @@ void printRemainingTime(long remainingTime) {
     buffer[2] = '0';
   lcd.print(buffer);
 
-  Serial.print(buffer);
-  Serial.println(" remaining");
+  Serial.println(buffer);
 }
 
 void loop() {
-  motionRaw = digitalRead(PIR_PIN);
-  buttonRaw = !digitalRead(START_STOP_BUTTON_PIN);
-  button2Raw = !digitalRead(ADD_TIME_BUTTON_PIN);
+  motionLatch.setState(digitalRead(PIR_PIN) == HIGH);
+  menuButtonLatch.setState(digitalRead(MENU_BUTTON_PIN) == LOW); // Sam's buttons work backwards for some reason, on any good breadboard this should be `== HIGH`
+  actionButtonLatch.setState(digitalRead(ACTION_BUTTON_PIN) == LOW); // same here
 
   cmillis = millis();
   firstInSecond = (cmillis / 1000) != (pmillis / 1000);
@@ -113,53 +132,34 @@ void loop() {
     printRemainingTime(timerRemaining);
   }
 
-  // If motion is detected (PIR_PIN = HIGH), do the following:
-  if (motionRaw == HIGH) {
-    digitalWrite(PIR_LED_PIN, HIGH);  // Turn on the on-board LED.
 
-    motionDetectedTime = millis();
+  if (motionLatch.state) {
+    motionDetectedTime = cmillis;
 
-    // Change the motion state to true (motion detected):
-    if (motionState == false) {
-      Serial.println("Motion detected!");
-      motionState = true;
-      if (timerState == PAUSED_MOTION)
+    if (motionLatch.stateChange == LOW_TO_HIGH) {
+      Serial.println("Motion detected");
+      if (timerState == PAUSED_MOTION) {
         digitalWrite(TIMER_LED_PIN, HIGH);
         timerState = RUNNING;
-        printRemainingTime(timerRemaining);
+      }
+      printRemainingTime(timerRemaining);
     }
+  } else if (motionLatch.stateChange == HIGH_TO_LOW) {
+    Serial.println("Motion ended!");
   }
 
-  // If no motion is detected (PIR_PIN = LOW), do the following:
-  else {
-    digitalWrite(PIR_LED_PIN, LOW);  // Turn off the on-board LED.
-
-    // Change the motion state to false (no motion):
-    if (motionState == true) {
-      Serial.println("Motion ended!");
-      motionState = false;
-    }
-  }
-
-  if (buttonRaw == HIGH && buttonState == false) {
-    buttonState = true;
-  } else if (buttonRaw == LOW && buttonState == true) {
-    timerState = timerState == RUNNING ? PAUSED_MANUAL : RUNNING;
-
-    motionDetectedTime = millis();
+  if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
+    timerState = (timerState == RUNNING) ? PAUSED_MANUAL : RUNNING;
+    motionDetectedTime = cmillis;
     digitalWrite(TIMER_LED_PIN, timerState == RUNNING);
     printRemainingTime(timerRemaining);
-    buttonState = false;
   }
 
-  if (button2Raw == HIGH && button2State == false) {
-    button2State = true;
-  } else if (button2Raw == LOW && button2State == true) {
+  if (actionButtonLatch.stateChange == HIGH_TO_LOW) {
     if (timerRemaining < 0)
       timerRemaining = 0;
     timerRemaining += TIMER_INCREMENT;
     printRemainingTime(timerRemaining);
-    button2State = false;
   }
 
   pmillis = cmillis;
