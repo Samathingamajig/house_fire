@@ -182,6 +182,7 @@ void loop() {
       printRemainingTime(timerRemaining);
       if (timerRemaining < 0) {
         timerState = ENDED;
+        timerRemaining = 0;
         digitalWrite(TIMER_LED_PIN, LOW);
       }
     }
@@ -212,15 +213,21 @@ void loop() {
     }
 
     if (actionButtonLatch.stateChange == HIGH_TO_LOW) {
-      timerState = (timerState == RUNNING) ? PAUSED_MANUAL : RUNNING;
       motionDetectedTime = cmillis;
-      digitalWrite(TIMER_LED_PIN, timerState == RUNNING);
-      printRemainingTime(timerRemaining);
+      if (timerRemaining > 0) {
+        timerState = (timerState == RUNNING) ? PAUSED_MANUAL : RUNNING;
+        digitalWrite(TIMER_LED_PIN, timerState == RUNNING);
+        printRemainingTime(timerRemaining);
+      }
     }
 
-    bool transitionSafe = timerState == ENDED || timerState == PAUSED_MANUAL;
+    bool transitionSafe = timerState == ENDED || timerState == PAUSED_MANUAL || timerState == PAUSED_MOTION;
     if (menuButtonLatch.stateChange == HIGH_TO_LOW) {
       if (transitionSafe) {
+        if (timerState == PAUSED_MOTION) {
+          timerState = PAUSED_MANUAL;
+        }
+
         scene = Scene::TimeChanging;
         lcd.clear();
         lcd.setCursor(2, 1);
